@@ -1,0 +1,5 @@
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#05080f;color:#f0f6ff;font-family:'DM Sans','Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#0e1520}
+::-webkit-scrollbar-thumb{background:#2a3f5f;border-radius:3px}
