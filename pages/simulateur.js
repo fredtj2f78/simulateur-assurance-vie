@@ -212,98 +212,140 @@ export default function Simulateur() {
  const [calcLoading,setCalcLoading] = useState(false)
 
 const [saveStatus,setSaveStatus] = useState('')
-const [biens,setBiens] = useState([])         // liste {id,nom,updated_at}
+const [biens,setBiens] = useState([])         
 const [bienActifId,setBienActifId] = useState(null)
+const bienActifIdRef = useRef(null)
+const biensRef = useRef([]) 
 const [showBienMenu,setShowBienMenu] = useState(false)
 const [editingNomId,setEditingNomId] = useState(null)
 const [editingNomVal,setEditingNomVal] = useState('')
-const [editingNomId,setEditingNomId] = useState(null)
-const [editingNomVal,setEditingNomVal] = useState(')
-
  const [plan,setPlan] = useState(null)
  const [settingsOpen,setSettingsOpen] = useState(false)
  const [blocks,setBlocks] = useState(Object.fromEntries(BLOCKS.map(b=>[b.id,true])))
-
  const [exportLoading,setExportLoading] = useState(false)
 
-
-const debounceCalc = useRef(null)
+ const debounceCalc = useRef(null)
  const debounceS = useRef(null)
+ const hasLoaded = useRef(false) // LE VERROU ANTI-BOUCLE
 
- useEffect(()=>{if(!authLoading&&!user)router.push('/login')},[user,authLoading,router])
-useEffect(()=>{
-  if(!user) return
-  const load = async()=>{
-    const token = await getToken()
-    // 1. Charge la liste
-    const res = await fetch('/api/simulation',{headers:{Authorization:`Bearer ${token}`}})
-    const data = await res.json()
-    const liste = data.simulations ?? []
-    setBiens(liste)
-    if(liste.length === 0) {
-      // Aucun bien → crée automatiquement le premier
-      const r2 = await fetch('/api/simulation',{
-        method:'POST',
-        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({params:DEF,nom:'Mon bien 1'})
-      })
-      const d2 = await r2.json()
-      setBienActifId(d2.id)
-      setBiens([{id:d2.id,nom:'Mon bien 1',updated_at:new Date().toISOString()}])
-    } else {
-      // Charge le plus récent
-      const actif = liste[0]
-      setBienActifId(actif.id)
-      const r2 = await fetch(`/api/simulation?id=${actif.id}`,{headers:{Authorization:`Bearer ${token}`}})
-      const d2 = await r2.json()
-      if(d2.simulation?.params) setP(prev=>({...prev,...d2.simulation.params}))
+ const stateRef = useRef(p)
+ useEffect(() => { stateRef.current = p }, [p])
+
+// Maintient la réf des biens à jour
+useEffect(() => {
+  biensRef.current = biens;
+}, [biens]);
+
+useEffect(()=>{if(!authLoading&&!user)router.push('/login')},[user,authLoading,router])
+
+// 🔒 Chargement initial robuste
+useEffect(() => {
+  if (!user || hasLoaded.current) return;
+  hasLoaded.current = true;
+
+  const load = async () => {
+    try {
+      const token = await getToken()
+      const res = await fetch('/api/simulation',{headers:{Authorization:`Bearer ${token}`}})
+      const data = await res.json()
+      const liste = data.simulations ?? []
+      setBiens(liste)
+      if(liste.length === 0) {
+        const r2 = await fetch('/api/simulation',{
+          method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+          body:JSON.stringify({params:DEF,nom:'Mon bien 1'})
+        })
+        const d2 = await r2.json()
+        setBienActifId(d2.id); bienActifIdRef.current = d2.id
+        setBiens([{id:d2.id,nom:'Mon bien 1',updated_at:new Date().toISOString()}])
+      } else {
+        const actif = liste[0]
+        setBienActifId(actif.id); bienActifIdRef.current = actif.id
+        const r2 = await fetch(`/api/simulation?id=${actif.id}`,{headers:{Authorization:`Bearer ${token}`}})
+        const d2 = await r2.json()
+        setP({ ...DEF, ...(d2.simulation?.params || {}) })
+      }
+    } catch (e) {
+      console.error("Erreur de chargement initial:", e)
+      hasLoaded.current = false;
     }
   }
   load()
-},[user])
+}, [user, getToken])
 
- 
 
- const saveParams = useCallback(async(params)=>{
-  if(!bienActifId) return
-  const token = await getToken()
-  setSaveStatus('saving')
-  await fetch(`/api/simulation?id=${bienActifId}`,{
-    method:'PUT',
-    headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-    body:JSON.stringify({params,nom:params.adresse||'Mon bien'})
-  })
-  setBiens(prev=>prev.map(b=>b.id===bienActifId?{...b,nom:params.adresse||'Mon bien'}:b))
-  setSaveStatus('saved')
-  setTimeout(()=>setSaveStatus(''),2000)
-},[getToken,bienActifId])
+const saveParams = useCallback(async(params, forceId = null, forceNom = null)=>{
+  const id = forceId || bienActifIdRef.current;
+  if(!id) return;
+
+  let nom = forceNom;
+  if (!nom) {
+     const b = biensRef.current.find(x => x.id === id);
+     nom = b ? b.nom : 'Mon bien';
+  }
+
+  const token = await getToken();
+  setSaveStatus('saving');
+  try {
+     await fetch(`/api/simulation?id=${id}`,{
+       method:'PUT',
+       headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+       body:JSON.stringify({params, nom}) 
+     });
+     setSaveStatus('saved');
+     setTimeout(()=>setSaveStatus(''),2000);
+  } catch (err) {
+     console.error("Erreur de sauvegarde", err);
+     setSaveStatus('');
+  }
+},[getToken]);
 
 const creerNouveauBien = useCallback(async()=>{
-  const token = await getToken()
-  const nom = `Mon bien ${biens.length+1}`
+  if (bienActifIdRef.current) {
+    await saveParams(stateRef.current, bienActifIdRef.current);
+  }
+
+  const token = await getToken();
+  const nom = `Mon bien ${biens.length+1}`;
   const res = await fetch('/api/simulation',{
     method:'POST',
     headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
     body:JSON.stringify({params:DEF,nom})
-  })
-  const data = await res.json()
-  const nouveau = {id:data.id,nom,updated_at:new Date().toISOString()}
-  setBiens(prev=>[nouveau,...prev])
-  setBienActifId(data.id)
-  setP(DEF)
-  setShowBienMenu(false)
-},[getToken,biens])
+  });
+  
+  const data = await res.json();
+  const nouveau = {id:data.id,nom,updated_at:new Date().toISOString()};
+  
+  setBiens(prev=>[nouveau,...prev]);
+  setBienActifId(data.id); 
+  bienActifIdRef.current = data.id;
+  setP(DEF);
+  setShowBienMenu(false);
+},[getToken, biens.length, saveParams]);
 
+
+// 🚀 LA CORRECTION DU CHANGEMENT DE BIEN EST ICI
 const chargerBien = useCallback(async(id)=>{
-  const token = await getToken()
-  const res = await fetch(`/api/simulation?id=${id}`,{headers:{Authorization:`Bearer ${token}`}})
-  const data = await res.json()
-  if(data.simulation?.params){
-    setP(prev=>({...prev,...data.simulation.params}))
-    setBienActifId(id)
+  // 1. On sauvegarde l'ancien bien avant de changer
+  if (bienActifIdRef.current && bienActifIdRef.current !== id) {
+    await saveParams(stateRef.current, bienActifIdRef.current);
   }
-  setShowBienMenu(false)
-},[getToken])
+
+  // 2. On lance la récupération du nouveau
+  const token = await getToken();
+  const res = await fetch(`/api/simulation?id=${id}`,{headers:{Authorization:`Bearer ${token}`}});
+  const data = await res.json();
+  
+  // 3. On FORCE la mise à jour de l'ID actif (même si le bien récupéré est vide !)
+  setBienActifId(id); 
+  bienActifIdRef.current = id;
+  
+  // 4. On charge les données, sinon on met les valeurs par défaut
+  setP({ ...DEF, ...(data.simulation?.params || {}) });
+  setShowBienMenu(false);
+},[getToken, saveParams]);
+
 
 const supprimerBien = useCallback(async(id)=>{
   if(!confirm('Supprimer ce bien ? Cette action est irréversible.')) return
@@ -319,12 +361,33 @@ const supprimerBien = useCallback(async(id)=>{
 },[getToken,biens,bienActifId,chargerBien])
 
 
+const renommerBien = async(id, nouveauNom)=>{
+  if (!nouveauNom || nouveauNom.trim() === '') {
+    setEditingNomId(null);
+    return;
+  }
+  const token = await getToken();
+  
+  setBiens(prev=>prev.map(b=>b.id===id?{...b,nom:nouveauNom}:b));
+  setEditingNomId(null);
 
- const renommerBien = async(id,nom)=>{
-  const token = await getToken()
-  await fetch(`/api/simulation?id=${id}`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({nom})})
-  setBiens(prev=>prev.map(b=>b.id===id?{...b,nom}:b))
-  setEditingNomId(null)
+  if (id === bienActifIdRef.current) {
+     await fetch(`/api/simulation?id=${id}`,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({ params: stateRef.current, nom: nouveauNom })
+     });
+  } else {
+     const res = await fetch(`/api/simulation?id=${id}`,{headers:{Authorization:`Bearer ${token}`}});
+     const data = await res.json();
+     const existingParams = data.simulation?.params || DEF;
+
+     await fetch(`/api/simulation?id=${id}`,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({ params: existingParams, nom: nouveauNom })
+     });
+  }
 }
 
 const runCalc = useCallback(async(params)=>{
@@ -338,14 +401,30 @@ const runCalc = useCallback(async(params)=>{
  finally{setCalcLoading(false)}
  },[getToken])
 
- useEffect(()=>{
+const runCalcRef = useRef(runCalc)
+const saveParamsRef = useRef(saveParams)
+
+useEffect(() => {
+  runCalcRef.current = runCalc
+  saveParamsRef.current = saveParams
+}, [runCalc, saveParams])
+
+useEffect(()=>{
  if(!user) return
  clearTimeout(debounceCalc.current)
- debounceCalc.current = setTimeout(()=>runCalc(p),600)
+ debounceCalc.current = setTimeout(() => {
+   if (runCalcRef.current) runCalcRef.current(p)
+ }, 600)
+
  clearTimeout(debounceS.current)
- debounceS.current = setTimeout(()=>saveParams(p),2000)
+ if (bienActifIdRef.current) {
+   debounceS.current = setTimeout(() => {
+     if (saveParamsRef.current) saveParamsRef.current(p)
+   }, 2000)
+ }
  return()=>{clearTimeout(debounceCalc.current);clearTimeout(debounceS.current)}
- },[p,user])
+},[p, user])
+
 
  const set = useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[])
  const toggle = useCallback((id,forceTo)=>setBlocks(prev=>({...prev,[id]:forceTo!==undefined?forceTo:!prev[id]})),[])
@@ -437,6 +516,10 @@ const runCalc = useCallback(async(params)=>{
     {calcLoading&&<span style={{color:T.textMuted,fontSize:11}}>calcul...</span>}
     {saveStatus==='saving'&&<span style={{color:T.textMuted,fontSize:11}}>💾 sauvegarde...</span>}
     {saveStatus==='saved'&&<span style={{color:T.green,fontSize:11}}>✓ sauvegardé</span>}
+    <button onClick={()=>saveParams(p)}
+      style={{background:`${T.gold}22`,border:`1px solid ${T.gold}`,borderRadius:6,color:T.gold,padding:'4px 12px',fontSize:12,cursor:'pointer',fontWeight:700}}>
+      💾 Sauvegarder
+    </button>
 
     {/* DROPDOWN BIENS */}
     <div style={{position:'relative'}}>
@@ -460,10 +543,18 @@ const runCalc = useCallback(async(params)=>{
                     onKeyDown={e=>{if(e.key==='Enter')renommerBien(b.id,editingNomVal||b.nom);if(e.key==='Escape')setEditingNomId(null)}}
                     style={{flex:1,background:T.s3,border:`1px solid ${T.gold}`,borderRadius:4,color:T.gold,fontSize:12,padding:'2px 6px',outline:'none'}}
                     onClick={e=>e.stopPropagation()}/>
-                  :<span onClick={()=>chargerBien(b.id)} onDoubleClick={()=>{setEditingNomId(b.id);setEditingNomVal(b.nom)}}
-                    style={{flex:1,cursor:'pointer',color:b.id===bienActifId?T.gold:T.text,fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',userSelect:'none'}}>
-                    {b.nom}
-                  </span>}
+                  :<>
+                    <span onClick={()=>chargerBien(b.id)} onDoubleClick={()=>{setEditingNomId(b.id);setEditingNomVal(b.nom)}}
+                      style={{flex:1,cursor:'pointer',color:b.id===bienActifId?T.gold:T.text,fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',userSelect:'none'}}>
+                      {b.nom}
+                    </span>
+                    <span onClick={(e)=>{e.stopPropagation(); setEditingNomId(b.id); setEditingNomVal(b.nom)}}
+                      style={{cursor:'pointer',fontSize:12,padding:'0 4px',color:T.textDim}}
+                      title="Renommer">
+                      ✏️
+                    </span>
+                  </>
+                }
                 <span onClick={()=>supprimerBien(b.id)}
                   style={{color:T.red,cursor:'pointer',fontSize:14,padding:'0 4px',flexShrink:0}}
                   title="Supprimer">×</span>
@@ -949,7 +1040,7 @@ const runCalc = useCallback(async(params)=>{
  )
  )}
 
- {/* VERDICT - MODIFIÉ AVEC CADENAS */}
+ {/* VERDICT */}
  {show('verdict')&&result&&(
  isPremium?(
  <Section title="📊 Synthèse comparative — Richesse nette finale" color={T.gold}>
@@ -987,3 +1078,4 @@ const runCalc = useCallback(async(params)=>{
  </div>
  )
 }
+
