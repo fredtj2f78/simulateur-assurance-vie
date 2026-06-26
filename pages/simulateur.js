@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { useAuth } from '../lib/useAuth'
+import { computePrixMaxCFNul } from '../lib/calcul'
 
 const VERSION = 'v29'
 const APP_NAME = 'Calcul Audit Immobilier'
@@ -21,12 +22,12 @@ const pct = (v,d=1) => v==null||isNaN(v)?"—":`${nf(v*100,d)} %`
 
 const DEF = {
  adresse:'',
- prixAchat:380000, notaire:30400, notaireManuel:false,
+ prixAchat:500000, notaire:40000, notaireManuel:false,
  chasseurTTC:0, agenceAcq:0, agenceIncluse:true,
  travaux:0, mobilier:0, terrain:0.20,
  apport:0, emprunt:0, empruntManuel:false,
  duree:20, taux:0.035, assurance:0.003,
- gli:783, fonciere:7458, teom:200,
+ gli:783, fonciere:6458, teom:200,
  coproRec:3826, coproNonRec:5738,
  pno:432, gestion:0, entretien:0, cfe:300, comptable:800,
  loyerCC:3583, charges:319, vacance:0, revaloLoyer:0,
@@ -39,6 +40,9 @@ const DEF = {
  fraisAgRevente:0, fraisAgReventeManuel:false,
  revaloValeur:0.015,
  ifiAutresActifs:0, ifiRP:0,
+ // Pinel
+ pinel:false, pinelPlus:false, pinelAnneeAchat:2023,
+ pinelDuree:9, pinelSurface:0,
 }
 
 const BLOCKS = [
@@ -48,6 +52,8 @@ const BLOCKS = [
  {id:'rev',label:'D. Revenus locatifs'},
  {id:'fisc',label:'E. Paramètres fiscaux'},
  {id:'revente',label:'F. Revente'},
+ {id:'pinel',label:'🏘️ G. Pinel'},
+ {id:'verdict',label:'Dashboard / Verdict'},
  {id:'kpis',label:'KPIs & Rendements'},
  {id:'tab_comp',label:'Tableau Synthèse (EBE, CF, TRI)'},
  {id:'cf_chart',label:'Graphique CF avant/après impôt'},
@@ -61,23 +67,27 @@ const BLOCKS = [
  {id:'tab_lmnp',label:'Tableau LMNP Réel'},
  {id:'tab_revente',label:'Détail Revente'},
  {id:'tab_emprunt',label:"Tableau d'Amortissement"},
- {id:'verdict',label:'Dashboard / Verdict'},
 ]
 
 // ── UI COMPONENTS ─────────────────────────────────────────────────────────
 const Lbl = ({c}) => <span style={{color:T.textDim,fontSize:11,display:'block',marginBottom:3}}>{c}</span>
 
-const Inp = ({label,value,onChange,suffix='€',step=1000,min=0,max,disabled}) => (
+const Inp = ({label,value,onChange,suffix='€',step=1000,min=0,max,disabled}) => {
+ const [raw,setRaw] = React.useState(String(value));
+ React.useEffect(()=>{ setRaw(String(value)); },[value]);
+ return (
  <div style={{marginBottom:10}}>
  <Lbl c={label}/>
  <div style={{display:'flex',alignItems:'center',gap:6}}>
- <input type="number" value={value} step={step} min={min} max={max} disabled={disabled}
- onChange={e=>onChange(parseFloat(e.target.value)||0)}
+ <input type="number" value={raw} step={step} min={min} max={max} disabled={disabled}
+ onChange={e=>{ setRaw(e.target.value); const n=parseFloat(e.target.value); if(!isNaN(n)) onChange(n); }}
+ onBlur={e=>{ const n=parseFloat(e.target.value); if(isNaN(n)||e.target.value==='') { onChange(0); setRaw('0'); } }}
  style={{background:disabled?T.s2:T.s3,border:`1px solid ${disabled?T.border:T.borderBright}`,borderRadius:5,color:disabled?T.textMuted:T.gold,padding:'6px 10px',fontSize:13,width:'100%',outline:'none',fontVariantNumeric:'tabular-nums'}}/>
  {suffix&&<span style={{color:T.textMuted,fontSize:11,whiteSpace:'nowrap'}}>{suffix}</span>}
  </div>
  </div>
-)
+ );
+}
 
 const PInp = ({label,value,onChange}) => (
  <Inp label={label} value={+(value*100).toFixed(3)} onChange={v=>onChange(v/100)} suffix="%" step={0.1} min={0} max={100}/>
@@ -226,19 +236,17 @@ const [editingNomVal,setEditingNomVal] = useState('')
 
  const debounceCalc = useRef(null)
  const debounceS = useRef(null)
- const hasLoaded = useRef(false) // LE VERROU ANTI-BOUCLE
+ const hasLoaded = useRef(false)
 
  const stateRef = useRef(p)
  useEffect(() => { stateRef.current = p }, [p])
 
-// Maintient la réf des biens à jour
 useEffect(() => {
   biensRef.current = biens;
 }, [biens]);
 
 useEffect(()=>{if(!authLoading&&!user)router.push('/login')},[user,authLoading,router])
 
-// 🔒 Chargement initial robuste
 useEffect(() => {
   if (!user || hasLoaded.current) return;
   hasLoaded.current = true;
@@ -325,23 +333,18 @@ const creerNouveauBien = useCallback(async()=>{
 },[getToken, biens.length, saveParams]);
 
 
-// 🚀 LA CORRECTION DU CHANGEMENT DE BIEN EST ICI
 const chargerBien = useCallback(async(id)=>{
-  // 1. On sauvegarde l'ancien bien avant de changer
   if (bienActifIdRef.current && bienActifIdRef.current !== id) {
     await saveParams(stateRef.current, bienActifIdRef.current);
   }
 
-  // 2. On lance la récupération du nouveau
   const token = await getToken();
   const res = await fetch(`/api/simulation?id=${id}`,{headers:{Authorization:`Bearer ${token}`}});
   const data = await res.json();
   
-  // 3. On FORCE la mise à jour de l'ID actif (même si le bien récupéré est vide !)
   setBienActifId(id); 
   bienActifIdRef.current = id;
   
-  // 4. On charge les données, sinon on met les valeurs par défaut
   setP({ ...DEF, ...(data.simulation?.params || {}) });
   setShowBienMenu(false);
 },[getToken, saveParams]);
@@ -420,7 +423,7 @@ useEffect(()=>{
  if (bienActifIdRef.current) {
    debounceS.current = setTimeout(() => {
      if (saveParamsRef.current) saveParamsRef.current(p)
-   }, 2000)
+   }, 20000)
  }
  return()=>{clearTimeout(debounceCalc.current);clearTimeout(debounceS.current)}
 },[p, user])
@@ -450,7 +453,8 @@ useEffect(()=>{
  const blob = new Blob([html],{type:'text/html'})
  const url = URL.createObjectURL(blob)
  const a = document.createElement('a')
- a.href=url; a.download=`SimuImmo_${p.adresse||'rapport'}_an${p.anCession}.html`
+ a.href=url; 
+ a.download=`Audit SimuImmo_${p.adresse||'rapport'}_an${p.anCession}.html`
  a.click(); URL.revokeObjectURL(url)
  }
  }catch(e){console.error(e)}
@@ -478,16 +482,16 @@ useEffect(()=>{
 
  const baseLoyer = p.loyerCC
  const chargesBase = p.gli + (p.fonciere-p.teom) + p.coproNonRec + p.pno + p.gestion + p.entretien
+ const chargesTreso = p.gli + (p.fonciere-p.teom) + p.coproNonRec + p.pno + (p.gestion||0) + (p.entretien||0) + (p.cfe||0) + (p.comptable||0)
  const loyerVariants = [-30,-15,-10,0,10,15,30].map(d=>{
- const lv=baseLoyer*(1+d/100)
- const loyerAnn=lv*12*(1-p.vacance)
- const chargesTreso=p.gli+p.fonciere+(p.coproRec+p.coproNonRec)+p.pno+p.gestion+p.entretien
+ const lvCC=baseLoyer*(1+d/100)
+ const lvHC=lvCC-(p.charges||0)
+ const loyerAnn=lvHC*12*(1-p.vacance)
  const cfAn1=loyerAnn-chargesTreso-(result?.mensualite??0)*12
- return{delta:d,loyer:Math.round(lv),cfAn1:Math.round(cfAn1/12),loyerAnn:Math.round(loyerAnn)}
+ return{delta:d,loyer:Math.round(lvCC),cfAn1:Math.round(cfAn1/12),loyerAnn:Math.round(loyerAnn)}
  })
  const vacanceVariants=[0,0.03,0.05,0.08,0.10,0.15].map(v=>{
- const lp=baseLoyer*12*(1-v)
- const chargesTreso=p.gli+p.fonciere+(p.coproRec+p.coproNonRec)+p.pno+p.gestion+p.entretien
+ const lp=(p.loyerCC-(p.charges||0))*12*(1-v)
  return{taux:v,loyerPond:Math.round(lp),cfAn1:Math.round((lp-chargesTreso-(result?.mensualite??0)*12)/12)}
  })
  const revaloVariants=[0,0.005,0.01,0.015,0.02,0.025,0.03].map(rv=>({taux:rv,prixVente:Math.round(p.prixAchat*Math.pow(1+rv,p.anCession))}))
@@ -497,10 +501,13 @@ useEffect(()=>{
  const ebeLMNPSCI = ebeLN - p.cfe - p.comptable;
 
  const compData = result ? {
-   sci: { ebe: ebeLMNPSCI, cashFlow: result?.years?.[0]?.cfSCI || 0, rendBrut: result?.rendBrut || 0, rendNet: ebeLMNPSCI / coutTotal, tri: result?.triSCI || 0 },
-   lmnp: { ebe: ebeLMNPSCI, cashFlow: result?.years?.[0]?.cfLMNP || 0, rendBrut: result?.rendBrut || 0, rendNet: ebeLMNPSCI / coutTotal, tri: result?.triLMNP || 0 },
-   nue: { ebe: ebeLN, cashFlow: result?.years?.[0]?.cfLN || 0, rendBrut: result?.rendBrut || 0, rendNet: ebeLN / coutTotal, tri: result?.triLN || 0 }
+   sci: { ebe: ebeLMNPSCI, cashFlow: result?.years?.[0]?.cfSCI || 0, rendBrut: result?.rendBrut || 0, rendNet: ebeLMNPSCI / coutTotal, tri: result?.triSCI ?? null },
+   lmnp: { ebe: ebeLMNPSCI, cashFlow: result?.years?.[0]?.cfLMNP || 0, rendBrut: result?.rendBrut || 0, rendNet: ebeLMNPSCI / coutTotal, tri: result?.triLMNP ?? null },
+   nue: { ebe: ebeLN, cashFlow: result?.years?.[0]?.cfLN || 0, rendBrut: result?.rendBrut || 0, rendNet: ebeLN / coutTotal, tri: result?.triLN ?? null }
  } : null;
+
+ // ── MODIF 2 : calcul prix max CF = 0 ─────────────────────────────────────
+ const prixMax = result ? computePrixMaxCFNul(p) : null
 
  if(authLoading) return <div style={{background:T.bg,minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',color:T.textDim}}>Chargement...</div>
  if(!user) return null
@@ -510,7 +517,13 @@ useEffect(()=>{
  
 <div style={{position:'sticky',top:0,zIndex:50,background:`${T.bg}f0`,backdropFilter:'blur(16px)',borderBottom:`1px solid ${T.border}`,height:52,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 20px'}}>
   <div style={{display:'flex',alignItems:'center',gap:10}}>
-    <div style={{width:26,height:26,background:`linear-gradient(135deg,${T.gold},${T.goldBright})`,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>⌂</div>
+  <a href="https://auditimmo-001.vercel.app" style={{ textDecoration: 'none', cursor: 'pointer' }}>
+  <div style={{ background: '#FFCD00', borderRadius: 8, padding: '2px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <img src="/logo.png" alt="Audit Immo" style={{ width: 44, height: 36, objectFit: 'contain' }} />
+  </div>
+</a>
+
+
     <span style={{fontWeight:800,fontSize:15,letterSpacing:-0.5}}>{APP_NAME}</span>
     <span style={{color:T.textMuted,fontSize:11,background:T.s2,border:`1px solid ${T.border}`,padding:'1px 6px',borderRadius:4}}>{VERSION}</span>
     {calcLoading&&<span style={{color:T.textMuted,fontSize:11}}>calcul...</span>}
@@ -615,7 +628,7 @@ useEffect(()=>{
  <div style={{marginBottom:10}}>
  <Lbl c="Frais d'agence acquéreur"/>
  <Toggle2 labelA="✓ Inclus dans le prix FAI" labelB="+ Non inclus (charge séparée)" value={p.agenceIncluse} onChange={v=>setP(prev=>({...prev,agenceIncluse:v}))}/>
- {!p.agenceIncluse&&<Inp label="Montant frais d'agence (€)" value={p.agenceAcq} onChange={set('agenceAcq')} step={500}/>}
+ <Inp label={p.agenceIncluse ? "Frais d'agence acquéreur (€) — inclus dans le prix FAI" : "Montant frais d'agence (€)"} value={p.agenceAcq} onChange={set('agenceAcq')} step={500}/>
  </div>
  <Inp label="Honoraires chasseur TTC (€)" value={p.chasseurTTC} onChange={set('chasseurTTC')} step={500}/>
  {p.chasseurTTC>0&&<InfoBox color={T.textDim}>HT : {eur(chasseurHT)} — TVA 20% : {eur(chasseurTVA)}<br/><span style={{fontSize:10}}>SCI IS : charge an 1 · LMNP : amorti · LN : fiscalement perdu</span></InfoBox>}
@@ -675,7 +688,7 @@ useEffect(()=>{
  <Inp label="Charges récupérables mensuelles (€)" value={p.charges} onChange={v => setP(prev => ({...prev, charges: v, coproRec: v * 12}))} step={10}/>
  <PInp label="Taux de vacance locative (%)" value={p.vacance} onChange={set('vacance')}/>
  <PInp label="Revalorisation annuelle du loyer (%)" value={p.revaloLoyer} onChange={set('revaloLoyer')}/>
- {result&&(
+ {result&& (
   <div style={{marginBottom:10}}>
     <Lbl c="Mensualité / Loyer net de charges récupérables"/>
     <div style={{
@@ -685,7 +698,7 @@ useEffect(()=>{
         const ratio = p.loyerCC > 0
           ? result.mensualite / ((p.loyerCC - p.charges) * (1 - p.vacance))
           : null
-        return ratio === null ? T.textMuted : ratio > 1 ? T.red : ratio > 0.8 ? T.orange : T.green
+        return ratio === null ? T.textMuted : ratio > 0.74 ? T.red : ratio > 0.6 ? T.orange : T.green
       })()
     }}>
       {p.loyerCC > 0
@@ -724,7 +737,48 @@ useEffect(()=>{
  </Section>
  )}
 
- {/* F. REVENTE */}
+ {/* F. PINEL */}
+ {show('pinel')&&(
+ <Section title="🏘️ Dispositif Pinel" color={T.ln}>
+ <Toggle2 labelA="✓ Pinel activé" labelB="✗ Pas de Pinel" value={p.pinel} onChange={v=>setP(prev=>({...prev,pinel:v}))}/>
+ {p.pinel&&<>
+ <Toggle2 labelA="Pinel+" labelB="Pinel classique" value={p.pinelPlus} onChange={v=>setP(prev=>({...prev,pinelPlus:v}))}/>
+ <Inp label="Année d'achat" value={p.pinelAnneeAchat} onChange={set('pinelAnneeAchat')} suffix="an" step={1} min={2019} max={2024}/>
+ <div style={{marginBottom:10}}>
+ <Lbl c="Durée d'engagement"/>
+ <div style={{display:'flex',gap:6}}>
+ {[6,9,12].map(d=>(
+ <button key={d} onClick={()=>setP(prev=>({...prev,pinelDuree:d}))}
+ style={{flex:1,padding:'7px 0',borderRadius:5,fontSize:12,fontWeight:600,cursor:'pointer',
+ border:`1px solid ${p.pinelDuree===d?T.ln:T.border}`,
+ background:p.pinelDuree===d?`${T.ln}22`:T.s2,
+ color:p.pinelDuree===d?T.ln:T.textDim}}>
+ {d} ans
+ </button>
+ ))}
+ </div>
+ </div>
+ <Inp label="Surface habitable (m²)" value={p.pinelSurface} onChange={set('pinelSurface')} suffix="m²" step={1} min={0}/>
+ {result&&<InfoBox color={T.ln}>
+ {(()=>{
+ const taux = result.pinelTaux
+ const base = result.pinelBase
+ const redAn = result.pinelReductionAn
+ const redTotal = result.pinelReductionTotal
+ return <>
+ Taux applicable : <strong>{(taux*100).toFixed(1)}%</strong><br/>
+ Base de calcul : <strong>{eur(base)}</strong><br/>
+ Réduction annuelle : <strong>{eur(redAn)}</strong><br/>
+ Réduction totale : <strong>{eur(redTotal)}</strong>
+ </>
+ })()}
+ </InfoBox>}
+ <InfoBox color={T.textDim}>⚠️ Pinel supprimé au 31/12/2024. Applicable uniquement aux acquisitions avant cette date.</InfoBox>
+ </>}
+ </Section>
+ )}
+
+ {/* G. REVENTE */}
  {show('revente')&&(
  <Section title="F. Revente" color={T.orange}>
  <Inp label="Année de cession" value={p.anCession} onChange={set('anCession')} suffix="an" step={1} min={1} max={30}/>
@@ -749,7 +803,38 @@ useEffect(()=>{
  )}
  </div>
 
- {/* KPIs - TOUJOURS VISIBLE POUR TOUT LE MONDE */}
+ {/* 1. SYNTHÈSE COMPARATIVE */}
+ {show('verdict')&&result&&(
+ isPremium?(
+ <Section title={`📊 Synthèse comparative — Richesse nette à terme (An ${p.anCession})`} color={T.gold}>
+  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+ <div style={{background:T.s3,border:`1px solid ${T.border}`,borderRadius:7,padding:'8px 14px',fontSize:12,color:T.textDim}}>
+ Cession à <strong style={{color:T.text}}>an {p.anCession}</strong>
+ </div>
+ <div style={{background:T.s3,border:`1px solid ${T.border}`,borderRadius:7,padding:'8px 14px',fontSize:12,color:T.textDim}}>
+ Prix revente : <strong style={{color:T.orange}}>{eur(result.prixVente)}</strong>
+ <span style={{color:T.textMuted,fontSize:10}}> {p.prixReventeManuel?'(manuel)':'(auto)'}</span>
+ </div>
+ <div style={{background:T.s3,border:`1px solid ${T.border}`,borderRadius:7,padding:'8px 14px',fontSize:12,color:T.textDim}}>
+ Frais agence revente : <span style={{fontWeight:700}}>{eur(result.fraisAg)}</span>
+ <span style={{color:T.textMuted,fontSize:10}}> (non inclus dans le prix)</span>
+ </div>
+ </div>
+ <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:14}}>
+ <RegimeWinner name="SCI IS — net après Flat Tax 31,4%" val={result.richNetteSCI} winner={result.verdict==='SCI IS'} color={T.sci} restricted={false}/>
+ <RegimeWinner name="Location Nue" val={result.richLN} winner={result.verdict==='Location Nue'} color={T.ln} restricted={false}/>
+ <RegimeWinner name="LMNP Réel" val={result.richLMNP} winner={result.verdict==='LMNP Réel'} color={T.lmnp} restricted={false}/>
+ </div>
+ <div style={{background:`${T.gold}0e`,border:`1px solid ${T.goldDim}`,borderRadius:7,padding:'9px 14px',fontSize:12,color:T.gold}}>
+ ⚠️ Outil pédagogique — Consultez un CGP, expert-comptable ou avocat fiscaliste avant toute décision.
+ </div>
+ </Section>
+ ):(
+ <Watermark><Section title={`📊 Synthèse comparative — Richesse nette à terme (An ${p.anCession})`}><div style={{height:180}}/></Section></Watermark>
+ )
+ )}
+
+ {/* 2. KPIs GLOBALS */}
  {show('kpis')&&result&&(
  <Section title={`📈 KPIs Globaux & Rendements (Gagnant : ${result.verdict})`}>
  <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
@@ -763,7 +848,7 @@ useEffect(()=>{
  </Section>
  )}
 
- {/* TABLEAU COMPARATIF - MODIFIÉ AVEC CADENAS */}
+ {/* 3. TABLEAU SYNTHÈSE — MODIF 3 : ajout ligne Prix FAI max CF=0 */}
  {show('tab_comp')&&result&&(
  isPremium?(
  <Section title="📊 Tableau Synthèse (EBE, Cash Flow, TRI)" color={T.gold}>
@@ -773,7 +858,22 @@ useEffect(()=>{
  ['Rendement Brut',pct(compData.sci.rendBrut,2),pct(compData.nue.rendBrut,2),pct(compData.lmnp.rendBrut,2)],
  ['Rendement Net (de charges)',pct(compData.sci.rendNet,2),pct(compData.nue.rendNet,2),pct(compData.lmnp.rendNet,2)],
  ['TRI (Taux de Rentabilité Interne)',pct(compData.sci.tri,2),pct(compData.nue.tri,2),pct(compData.lmnp.tri,2)],
+ [
+   <span style={{color:T.gold,fontWeight:700}}>💡 Prix net vendeur max pour avoir un cash flow > 0 la 1ère année</span>,
+   <span style={{color:prixMax?.prixMaxSCI!=null?T.gold:T.textMuted,fontWeight:700}}>
+     {prixMax?.prixMaxSCI!=null ? eur(prixMax.prixMaxSCI) : '—'}
+   </span>,
+   <span style={{color:prixMax?.prixMaxLN!=null?T.gold:T.textMuted,fontWeight:700}}>
+     {prixMax?.prixMaxLN!=null ? eur(prixMax.prixMaxLN) : '—'}
+   </span>,
+   <span style={{color:prixMax?.prixMaxLMNP!=null?T.gold:T.textMuted,fontWeight:700}}>
+     {prixMax?.prixMaxLMNP!=null ? eur(prixMax.prixMaxLMNP) : '—'}
+   </span>,
+ ],
  ]}/>
+ <div style={{fontSize:10,color:T.textMuted,marginTop:8,padding:'5px 8px',background:T.s2,borderRadius:5}}>
+   💡 Prix net vendeur maximum (notaire 8% recalculé, agence + chasseur fixes) pour que le CF annuel après impôt soit positif en année 1.
+ </div>
  </Section>
  ):(
  <Watermark><Section title="📊 Tableau Synthèse (EBE, Cash Flow, TRI)"><div style={{height:180}}/></Section></Watermark>
@@ -837,9 +937,9 @@ useEffect(()=>{
  isPremium?(
  <Section title="⚡ TRI & Performance financière">
  <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16}}>
- <Card label="TRI SCI IS (net)" value={pct(result?.triSCI,2)} color={T.sci} sub="Après IS + Flat Tax revente"/>
- <Card label="TRI Location Nue" value={pct(result?.triLN,2)} color={T.ln} sub="Après IR+PS"/>
- <Card label="TRI LMNP Réel" value={pct(result?.triLMNP,2)} color={T.lmnp} sub="Après BIC IR+PS"/>
+ <Card label="TRI SCI IS (net)" value={p.apport>0?pct(result?.triSCI,2):'N/A (apport=0)'} color={T.sci} sub="Après IS + Flat Tax revente"/>
+ <Card label="TRI Location Nue" value={p.apport>0?pct(result?.triLN,2):'N/A (apport=0)'} color={T.ln} sub="Après IR+PS"/>
+ <Card label="TRI LMNP Réel" value={p.apport>0?pct(result?.triLMNP,2):'N/A (apport=0)'} color={T.lmnp} sub="Après BIC IR+PS"/>
  </div>
  <Tbl headers={['Indicateur','SCI IS','Location Nue','LMNP Réel']} rows={[
  ['Tréso (CF) cumulée après impôt',eur(result?.tresoCumSCI),eur(result?.tresoCumLN),eur(result?.tresoCumLMNP)],
@@ -965,7 +1065,7 @@ useEffect(()=>{
  isPremium?(
  <Section title={`🏷️ Détail Revente — Année ${p.anCession} (bloc isolé)`} color={T.orange}>
  <div style={{background:`${T.orange}0a`,border:`1px solid ${T.orange}33`,borderRadius:7,padding:'8px 14px',fontSize:11,color:T.orange,marginBottom:14}}>
- ℹ️ Le tableau ci-dessous est strictement isolé des flux d'exploitation annuels. L'an {p.anCession} dans les tableaux ci-dessus contient uniquement les CF d'exploitation (loyers - charges - mensualité - impôt).
+ ℹ️ Le tableau ci-dessous est strictement isolé des flux d'exploitation annuels. L'an {p.anCession} dans les tableaux ci-dessus contains uniquement les CF d'exploitation.
  </div>
  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))',gap:12}}>
  {[
@@ -1033,41 +1133,10 @@ useEffect(()=>{
  isPremium?(
  <Section title="🏦 Tableau d'Amortissement" color={T.blue}>
  <Tbl color={T.blue} compact headers={['Année','Mensualité (€)','Capital (€)','Intérêts (€)','Assurance (€)','CRD (€)']}
- rows={result.loan?.map((l,i)=>[`An ${i+1}`,eur(l.total/12),eur(l.capital),eur(l.interest),eur(l.insurance),eur(l.balance)])||[]}/>
+ rows={result.loan?.slice(0, p.duree).map((l,i)=>[`An ${i+1}`,eur(l.total/12),eur(l.capital),eur(l.interest),eur(l.insurance),eur(l.balance)])||[]}/>
  </Section>
  ):(
  <Watermark><Section title="🏦 Tableau d'Amortissement"><div style={{height:150}}/></Section></Watermark>
- )
- )}
-
- {/* VERDICT */}
- {show('verdict')&&result&&(
- isPremium?(
- <Section title="📊 Synthèse comparative — Richesse nette finale" color={T.gold}>
- <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
- <div style={{background:T.s3,border:`1px solid ${T.border}`,borderRadius:7,padding:'8px 14px',fontSize:12,color:T.textDim}}>
- Cession à <strong style={{color:T.text}}>an {p.anCession}</strong>
- </div>
- <div style={{background:T.s3,border:`1px solid ${T.border}`,borderRadius:7,padding:'8px 14px',fontSize:12,color:T.textDim}}>
- Prix revente : <strong style={{color:T.orange}}>{eur(result.prixVente)}</strong>
- <span style={{color:T.textMuted,fontSize:10}}> {p.prixReventeManuel?'(manuel)':'(auto)'}</span>
- </div>
- <div style={{background:T.s3,border:`1px solid ${T.border}`,borderRadius:7,padding:'8px 14px',fontSize:12,color:T.textDim}}>
- Frais agence revente : <span style={{fontWeight:700}}>{eur(result.fraisAg)}</span>
- <span style={{color:T.textMuted,fontSize:10}}> (non inclus dans le prix)</span>
- </div>
- </div>
- <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:14}}>
- <RegimeWinner name="SCI IS — net après Flat Tax 31,4%" val={result.richNetteSCI} winner={result.verdict==='SCI IS'} color={T.sci} restricted={false}/>
- <RegimeWinner name="Location Nue" val={result.richLN} winner={result.verdict==='Location Nue'} color={T.ln} restricted={false}/>
- <RegimeWinner name="LMNP Réel" val={result.richLMNP} winner={result.verdict==='LMNP Réel'} color={T.lmnp} restricted={false}/>
- </div>
- <div style={{background:`${T.gold}0e`,border:`1px solid ${T.goldDim}`,borderRadius:7,padding:'9px 14px',fontSize:12,color:T.gold}}>
- ⚠️ Outil pédagogique — Consultez un CGP, expert-comptable ou avocat fiscaliste avant toute décision.
- </div>
- </Section>
- ):(
- <Watermark><Section title="📊 Synthèse comparative — Richesse nette finale"><div style={{height:180}}/></Section></Watermark>
  )
  )}
 
@@ -1078,4 +1147,3 @@ useEffect(()=>{
  </div>
  )
 }
-

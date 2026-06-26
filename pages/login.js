@@ -53,7 +53,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{ width: 56, height: 56, background: `linear-gradient(135deg, ${T.gold}, #e8c76a)`, borderRadius: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 16 }}>⌂</div>
-          <h1 style={{ color: T.text, fontSize: 24, fontWeight: 800, letterSpacing: -0.5 }}>SimuImmov</h1>
+          <h1 style={{ color: T.text, fontSize: 24, fontWeight: 800, letterSpacing: -0.5 }}>SimuImmo</h1>
           <p style={{ color: T.textDim, fontSize: 14, marginTop: 6 }}>Simulateur fiscal immobilier professionnel</p>
         </div>
 

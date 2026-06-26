@@ -1,0 +1,22 @@
+{
+  "name": "SimuImmo \u2014 Simulateur Fiscal",
+  "short_name": "SimuImmo",
+  "description": "Comparez SCI IS, LMNP R\u00e9el et Location Nue",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#05080f",
+  "theme_color": "#c9a84c",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

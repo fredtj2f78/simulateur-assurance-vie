@@ -40,7 +40,7 @@ const PLANS = [
 ]
 
 const TESTIMONIALS = [
-  { name: 'Marc D.', role: 'Conseiller en Gestion de Patrimoine', text: 'Je l\'utilise pour chaque nouveau client investisseur. La comparaison SCI IS / LMNP en temps réel me fait gagner 2h par dossier. Les références LF 2025 sont à jour, c\'est essentiel.', stars: 5 },
+  { name: 'Marc D.', role: 'Conseiller en Gestion de Patrimoine', text: 'Je l\'utilise pour chaque nouveau client investisseur. La comparaison SCI IS / LMNP en temps réel me fait gagner 2h par dossier. Les références LF 2025 sont à jour, c\'est essentiel. Cerise sur le gâteau 50% de reduction avec le code Welcome50 c\'est donné. Merci', stars: 5 },
   { name: 'Sophie L.', role: 'Investisseuse immobilière — 8 biens', text: 'Avant SimuImmo je gérais tout sur Excel. Maintenant en 5 minutes j\'ai le TRI sur 20 ans et la richesse nette après revente. Le module IFI m\'a évité une mauvaise surprise.', stars: 5 },
   { name: 'Antoine R.', role: 'Notaire — Étude parisienne', text: 'Outil sérieux, calculs vérifiables. J\'apprécie que les formules soient expliquées et référencées (art. 84 LF 2025 pour LMNP, PFU 31,4% LFSS 2026). Je le recommande à mes clients.', stars: 5 },
 ]
@@ -258,7 +258,7 @@ export default function Landing() {
       {/* NAV */}
       <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: scrolled ? 'rgba(5,8,15,0.96)' : 'transparent', backdropFilter: scrolled ? 'blur(20px)' : 'none', borderBottom: `1px solid ${scrolled ? 'rgba(201,168,76,0.12)' : 'transparent'}`, transition: 'all 0.3s', padding: '0 40px', height: 62, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 30, height: 30, background: `linear-gradient(135deg,${G.gold},${G.goldLight})`, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>⌂</div>
+          <div style={{ background: '#FFCD00', borderRadius: 8, padding: '2px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><img src="/logo.png" alt="SimuImmo" style={{ width: 48, height: 40, objectFit: 'contain' }} /></div>
           <span style={{ fontWeight: 800, fontSize: 17, letterSpacing: -0.5 }}>SimuImmo</span>
           <span style={{ fontSize: 10, color: G.gold, background: `${G.gold}18`, border: `1px solid ${G.gold}33`, padding: '1px 6px', borderRadius: 4 }}>v29</span>
         </div>

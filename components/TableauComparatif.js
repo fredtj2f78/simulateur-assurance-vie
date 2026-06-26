@@ -1,10 +1,13 @@
 import React from 'react';
 
-export default function TableauComparatif({ data }) {
+export default function TableauComparatif({ data, prixMax }) {
   if (!data) return null;
 
   const formatCurrency = (val) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(val || 0);
   const formatPercent = (val) => (val !== undefined && val !== null) ? `${val.toFixed(2)} %` : '-';
+  const formatPrix = (val) => val != null
+    ? new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(val)
+    : '—';
 
   return (
     <div className="overflow-x-auto my-8">
@@ -49,6 +52,27 @@ export default function TableauComparatif({ data }) {
             <td className="px-4 py-2 border text-center text-gray-700">{formatPercent(data.lmnp?.tri)}</td>
             <td className="px-4 py-2 border text-center text-gray-700">{formatPercent(data.sci?.tri)}</td>
           </tr>
+
+          {/* ── PRIX MAX POUR CF = 0 ── */}
+          {prixMax && (
+            <tr className="bg-amber-50 border-t-2 border-amber-300">
+              <td className="px-4 py-2 border font-semibold text-amber-800">
+                Prix FAI max (CF an1 = 0)
+                <span className="block text-xs font-normal text-amber-600">
+                  Notaire 8% + emprunt recalculés
+                </span>
+              </td>
+              <td className="px-4 py-2 border text-center font-bold text-amber-900">
+                {formatPrix(prixMax.prixMaxLN)}
+              </td>
+              <td className="px-4 py-2 border text-center font-bold text-amber-900">
+                {formatPrix(prixMax.prixMaxLMNP)}
+              </td>
+              <td className="px-4 py-2 border text-center font-bold text-amber-900">
+                {formatPrix(prixMax.prixMaxSCI)}
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

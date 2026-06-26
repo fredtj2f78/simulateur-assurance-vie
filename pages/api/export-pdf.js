@@ -76,6 +76,7 @@ export default async function handler(req, res) {
     <div>
       <div class="logo">Simu<span>Immo</span> <span style="font-size:12px;color:#888">v29</span></div>
       <div style="font-size:10px;color:#888;margin-top:3px">Simulateur fiscal immobilier</div>
+      <div style="font-size:10px;color:#c9a84c;margin-top:3px">🌐 auditimmo-001.vercel.app</div>
     </div>
     <div class="meta">
       <div class="addr">${params.adresse || 'Simulation immobilière'}</div>
@@ -168,7 +169,7 @@ export default async function handler(req, res) {
   </table>
 
   <div class="disclaimer">
-    ⚠️ <strong>Avertissement :</strong> SimuImmo est un outil pédagogique. PFU ${pct(params.pfu)} (LFSS 2026) · LF 2025 art. 84 LMNP · IS 15%/25% · Abattements PV (CGI art. 150 VC). Consultez un CGP ou avocat fiscaliste avant toute décision.
+    ⚠️ <strong>Avertissement :</strong> SimuImmo est un outil pédagogique — <strong>auditimmo-001.vercel.app</strong>. PFU ${pct(params.pfu)} (LFSS 2026) · LF 2025 art. 84 LMNP · IS 15%/25% · Abattements PV (CGI art. 150 VC). Consultez un CGP ou avocat fiscaliste avant toute décision.
   </div>
 </div>
 </body>

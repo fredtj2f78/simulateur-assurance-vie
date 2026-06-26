@@ -18,32 +18,54 @@ export async function verifyAuth(req) {
 
 export async function getUserProfile(userId) {
   const admin = supabaseAdmin()
-  // Essai par id
-  const { data, error } = await admin
+
+  const { data } = await admin
     .from('profiles')
-    .select('plan, trial_ends_at, stripe_customer_id, stripe_subscription_id')
+    .select('plan, trial_ends_at, stripe_customer_id, stripe_subscription_id, created_at')
     .eq('id', userId)
     .single()
-  if (data) return data
+
+  if (data) {
+    // Si pas de trial_ends_at défini → on calcule created_at + 7 jours
+    if (!data.trial_ends_at && data.created_at) {
+      const trialEnd = new Date(data.created_at)
+      trialEnd.setDate(trialEnd.getDate() + 7)
+      data.trial_ends_at = trialEnd.toISOString()
+      data.plan = data.plan || 'trial'
+    }
+    return data
+  }
+
   // Fallback par email via auth
   const { data: authUser } = await admin.auth.admin.getUserById(userId)
   if (authUser?.user?.email) {
     const { data: data2 } = await admin
       .from('profiles')
-      .select('plan, trial_ends_at, stripe_customer_id, stripe_subscription_id')
+      .select('plan, trial_ends_at, stripe_customer_id, stripe_subscription_id, created_at')
       .eq('email', authUser.user.email)
       .single()
-    if (data2) return data2
+
+    if (data2) {
+      if (!data2.trial_ends_at && data2.created_at) {
+        const trialEnd = new Date(data2.created_at)
+        trialEnd.setDate(trialEnd.getDate() + 7)
+        data2.trial_ends_at = trialEnd.toISOString()
+        data2.plan = data2.plan || 'trial'
+      }
+      return data2
+    }
   }
-  // Fallback : retourne premium_month par défaut si user existe dans auth
+
+  // Fallback ultime : free sans essai
   return { plan: 'free' }
 }
 
 export function checkAccess(profile) {
   const now = new Date()
-  const hasPremiumPlan = ['premium_month','premium_year','premium_life','premium_lifetime'].includes(profile?.plan)
-  const isTrialActive = profile?.plan === 'trial' && profile.trial_ends_at && new Date(profile.trial_ends_at) > now
+  const hasPremiumPlan = ['premium_month', 'premium_year', 'premium_life', 'premium_lifetime'].includes(profile?.plan)
+  const isTrialActive = profile?.trial_ends_at && new Date(profile.trial_ends_at) > now
   const isAdmin = profile?.role === 'admin'
+
   return {
     isPremium: hasPremiumPlan,
     isTrial: isTrialActive,
