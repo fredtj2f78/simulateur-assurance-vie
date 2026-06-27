@@ -6,8 +6,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Méthode non autorisée' });
   }
 
-  // Utilisation de la fonction validée par le compilateur
-  const supabase = createServerClient({ req, res });
+  // On fournit les 3 arguments exigés par TypeScript : URL, Clé, et { req, res }
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  const supabase = createServerClient(supabaseUrl, supabaseKey, { req, res });
   
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
