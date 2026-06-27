@@ -7,7 +7,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   
   // Utilisation du nom de fonction exact réclamé par le compilateur
-  const supabase = createBrowserClient();
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+
+
 
   useEffect(() => {
     async function fetchStats() {
