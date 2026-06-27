@@ -6,11 +6,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Méthode non autorisée' });
   }
 
-  // On fournit les 3 arguments exigés par TypeScript : URL, Clé, et { req, res }
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   
-  const supabase = createServerClient(supabaseUrl, supabaseKey, { req, res });
+  // La nouvelle syntaxe exigée par TypeScript pour gérer l'authentification
+  const supabase = createServerClient(supabaseUrl, supabaseKey, {
+    cookies: {
+      get: (name) => req.cookies[name],
+      set: () => {},
+      remove: () => {}
+    }
+  });
   
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
@@ -21,7 +27,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const formattedData = transactions.map((row: any) => {
-      const rawAmount = row['Montant'] ? row['Montant'].replace(/\s/g, '').replace(',', '.') : '0';
+      // Sécurisation avec String() au cas où le CSV envoie un nombre brut
+      const rawAmount = row['Montant'] ? String(row['Montant']).replace(/\s/g, '').replace(',', '.') : '0';
       const parsedAmount = parseFloat(rawAmount);
 
       return {
