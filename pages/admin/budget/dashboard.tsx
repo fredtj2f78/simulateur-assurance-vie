@@ -5,31 +5,40 @@ import { Card, Title, BarChart, Subtitle } from '@tremor/react';
 export default function Dashboard() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorDiagnostic, setErrorDiagnostic] = useState<string | null>(null);
   
-  // Utilisation du nom de fonction exact réclamé par le compilateur
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-
-
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
   useEffect(() => {
     async function fetchStats() {
-      const { data: stats, error } = await supabase
-        .from('stats_par_compte')
-        .select('*');
+      try {
+        const { data: stats, error } = await supabase
+          .from('stats_par_compte')
+          .select('*');
 
-      if (!error && stats) {
-        // Transformation des décaissements (négatifs) en positifs pour l'affichage Tremor
-        const formattedStats = stats.map((row: any) => ({
-          ...row,
-          total_decaisse_positif: Math.abs(row.total_decaisse)
-        }));
-        setData(formattedStats);
+        if (error) {
+          // Si Supabase renvoie une erreur officielle
+          setErrorDiagnostic(`Erreur Supabase : ${error.message} (Code: ${error.code})`);
+        } else if (stats) {
+          if (stats.length === 0) {
+            // Si la connexion fonctionne mais qu'aucune ligne ne ressort
+            setErrorDiagnostic("La vue a renvoyé 0 ligne. Problème probable de session ou de sécurité RLS.");
+          } else {
+            const formattedStats = stats.map((row: any) => ({
+              ...row,
+              total_decaisse_positif: Math.abs(row.total_decaisse)
+            }));
+            setData(formattedStats);
+          }
+        }
+      } catch (err: any) {
+        setErrorDiagnostic(`Erreur de code : ${err.message}`);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
 
     fetchStats();
@@ -45,6 +54,12 @@ const supabase = createBrowserClient(
         
         {loading ? (
           <div className="h-72 flex items-center justify-center text-gray-500">Chargement des données...</div>
+        ) : errorDiagnostic ? (
+          <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-700 font-mono text-sm">
+            <p className="font-bold mb-1">⚠️ Diagnostic du problème :</p>
+            <p className="whitespace-pre-wrap">{errorDiagnostic}</p>
+            <p className="text-xs text-gray-500 mt-4">Pistes : Vérifiez que vous êtes bien connecté sur l'application ou que la Vue SQL a été créée.</p>
+          </div>
         ) : (
           <BarChart
             className="mt-6 h-72"
@@ -61,3 +76,4 @@ const supabase = createBrowserClient(
     </div>
   );
 }
+
