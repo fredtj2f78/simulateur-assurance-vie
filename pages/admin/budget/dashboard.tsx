@@ -45,7 +45,8 @@ export default function Dashboard() {
   }, [supabase]);
 
   return (
-    <div className="max-w-6xl mx-auto p-8">
+<div className="max-w-6xl mx-auto p-8 bg-gray-50 min-h-screen text-black">
+
       <h1 className="text-3xl font-bold mb-8 text-gray-900">Tableau de bord - Audit Immo</h1>
       
       <Card>
