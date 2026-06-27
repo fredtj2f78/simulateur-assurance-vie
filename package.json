@@ -11,6 +11,7 @@
     "@stripe/stripe-js": "3.5.0",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/supabase-js": "^2.108.2",
+    "@tailwindcss/postcss": "^4.3.1",
     "@tremor/react": "^3.18.7",
     "dotenv": "^17.4.2",
     "gray-matter": "^4.0.3",
