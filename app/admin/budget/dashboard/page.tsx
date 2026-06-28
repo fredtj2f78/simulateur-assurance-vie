@@ -2,17 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/auth-helpers-nextjs';
+import { DonutChart, Legend, Card, Metric, Text, Grid } from '@tremor/react';
 
 export default function Dashboard() {
-  // États pour les statistiques des comptes
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorDiagnostic, setErrorDiagnostic] = useState<string | null>(null);
-
-  // États pour les engagements futurs
+  const [dataComptes, setDataComptes] = useState<any[]>([]);
   const [engagements, setEngagements] = useState<any[]>([]);
-  const [loadingEngagements, setLoadingEngagements] = useState(true);
-  const [errorEngagements, setErrorEngagements] = useState<string | null>(null);
+  const [dataCategories, setDataCategories] = useState<any[]>([]);
+  const [kpi, setKpi] = useState<any>({ total_recettes: 0, total_depenses: 0, total_incompressibles: 0 });
+  const [fraisPeriodiques, setFraisPeriodiques] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,153 +18,120 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    // 1. Récupération des comptes
-    async function fetchStats() {
+    async function loadDashboardData() {
       try {
-        const { data: stats, error } = await supabase
-          .from('stats_par_compte')
-          .select('*');
+        const [resComptes, resEng, resCats, resKpi, resFrais] = await Promise.all([
+          supabase.from('stats_par_compte').select('*'),
+          supabase.from('engagements_futurs').select('*').order('date_echeance', { ascending: true }),
+          supabase.from('stats_par_categorie').select('*'),
+          supabase.from('kpi_globaux').select('*').single(),
+          supabase.from('frais_periodiques').select('*')
+        ]);
 
-        if (error) {
-          setErrorDiagnostic(`Erreur Supabase : ${error.message}`);
-        } else if (stats) {
-          const formattedStats = stats.map((row: any) => ({
-            ...row,
-            total_decaisse_positif: Math.abs(row.total_decaisse)
-          }));
-          setData(formattedStats);
-        }
-      } catch (err: any) {
-        setErrorDiagnostic(`Erreur : ${err.message}`);
+        if (resComptes.data) setDataComptes(resComptes.data.map((row: any) => ({ ...row, total_decaisse_positif: Math.abs(row.total_decaisse) })));
+        if (resEng.data) setEngagements(resEng.data);
+        if (resCats.data) setDataCategories(resCats.data);
+        if (resKpi.data) setKpi(resKpi.data);
+        if (resFrais.data) setFraisPeriodiques(resFrais.data);
+      } catch (err) {
+        console.error(err);
       } finally {
         setLoading(false);
       }
     }
-
-    // 2. Récupération des engagements futurs
-    async function fetchEngagements() {
-      try {
-        const { data: eng, error } = await supabase
-          .from('engagements_futurs')
-          .select('*')
-          .order('date_echeance', { ascending: true }); // Tri du plus proche au plus lointain
-
-        if (error) {
-          // Si la table n'existe pas encore, on l'attrape ici
-          if (error.code === '42P01') {
-             setErrorEngagements("La table 'engagements_futurs' n'existe pas encore dans Supabase.");
-          } else {
-             setErrorEngagements(`Erreur Supabase : ${error.message}`);
-          }
-        } else if (eng) {
-          setEngagements(eng);
-        }
-      } catch (err: any) {
-        setErrorEngagements(`Erreur : ${err.message}`);
-      } finally {
-        setLoadingEngagements(false);
-      }
-    }
-
-    fetchStats();
-    fetchEngagements();
+    loadDashboardData();
   }, [supabase]);
 
+  const valueFormatter = (number: number) =>
+    Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(number);
+
+  const chartColors = ["blue", "cyan", "indigo", "violet", "fuchsia", "emerald", "amber", "rose", "gray"];
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-black">Chargement de l'architecture Audit Immo...</div>;
+
   return (
-    <div className="max-w-6xl mx-auto p-8 bg-gray-50 min-h-screen text-black">
+    <div className="max-w-7xl mx-auto p-4 md:p-8 bg-gray-50 min-h-screen text-black">
       <h1 className="text-3xl font-bold mb-8 text-gray-900 border-b border-gray-300 pb-4">Tableau de bord - Audit Immo</h1>
       
-      {/* PREMIER BLOC : COMPTES BANCAIRES */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-        <h2 className="text-xl font-semibold text-gray-800">Flux financiers par compte</h2>
-        <p className="text-gray-500 mb-6 text-sm">Comparaison des encaissements et décaissements sur la période</p>
-        
-        {loading ? (
-          <div className="h-48 flex items-center justify-center text-gray-500">Chargement des données bancaires...</div>
-        ) : errorDiagnostic ? (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700 font-mono text-sm">
-            ⚠️ {errorDiagnostic}
+      {/* KPI HAUT DE PAGE */}
+      <Grid numItemsSm={2} numItemsLg={3} className="gap-6 mb-8">
+        <Card decoration="top" decorationColor="emerald">
+          <Text>Recettes Totales</Text>
+          <Metric>{valueFormatter(kpi.total_recettes)}</Metric>
+        </Card>
+        <Card decoration="top" decorationColor="rose">
+          <Text>Dépenses Totales</Text>
+          <Metric>{valueFormatter(kpi.total_depenses)}</Metric>
+        </Card>
+        <Card decoration="top" decorationColor="amber">
+          <Text>Incompressibles (Point Mort)</Text>
+          <Metric>{valueFormatter(kpi.total_incompressibles)}</Metric>
+          <Text className="mt-2 text-xs text-gray-500">
+            {kpi.total_recettes > 0 ? Math.round((kpi.total_incompressibles / kpi.total_recettes) * 100) : 0}% de vos recettes
+          </Text>
+        </Card>
+      </Grid>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {/* CAMEMBERT */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-6">Répartition des Dépenses</h2>
+          <div className="flex flex-col items-center justify-center">
+            <DonutChart className="h-64 mb-4" data={dataCategories} category="total_depense" index="categorie" valueFormatter={valueFormatter} colors={chartColors} />
+            <Legend categories={dataCategories.map((c) => c.categorie).slice(0, 6)} colors={chartColors} />
           </div>
-        ) : data.length === 0 ? (
-          <div className="p-4 text-gray-500 text-center italic">Aucune donnée bancaire à afficher.</div>
-        ) : (
-          <div className="overflow-x-auto">
+        </div>
+
+        {/* FRAIS PÉRIODIQUES */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 overflow-hidden flex flex-col">
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">Frais Périodiques & Charges</h2>
+          <p className="text-gray-500 mb-4 text-sm">Détection automatique des récurrences</p>
+          <div className="overflow-auto flex-1">
             <table className="w-full text-sm text-left border-collapse">
-              <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
+              <thead className="bg-gray-100 text-gray-700 uppercase text-xs sticky top-0">
                 <tr>
-                  <th className="px-6 py-4 border-b border-gray-200 font-bold">Compte Bancaire</th>
-                  <th className="px-6 py-4 border-b border-gray-200 font-bold text-right">Total Encaissé</th>
-                  <th className="px-6 py-4 border-b border-gray-200 font-bold text-right">Total Décaissé</th>
+                  <th className="px-4 py-3 font-bold">Libellé Brut</th>
+                  <th className="px-4 py-3 font-bold text-center">Occurrences</th>
+                  <th className="px-4 py-3 font-bold text-right">Moyenne</th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((row, i) => (
-                  <tr key={i} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 border-b border-gray-100 font-medium text-gray-900">
-                      {row.account_name}
-                    </td>
-                    <td className="px-6 py-4 border-b border-gray-100 text-right text-emerald-600 font-bold whitespace-nowrap">
-                      {Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(row.total_encaisse)}
-                    </td>
-                    <td className="px-6 py-4 border-b border-gray-100 text-right text-red-600 font-bold whitespace-nowrap">
-                      {Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(row.total_decaisse_positif)}
-                    </td>
+                {fraisPeriodiques.map((row, i) => (
+                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-800 truncate max-w-[200px]">{row.libelle}</td>
+                    <td className="px-4 py-3 text-center text-gray-500">{row.frequence}x</td>
+                    <td className="px-4 py-3 text-right text-rose-600 font-bold">{valueFormatter(row.montant_moyen)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* DEUXIÈME BLOC : ENGAGEMENTS FUTURS */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-800">Calendrier des engagements à venir</h2>
-        <p className="text-gray-500 mb-6 text-sm">Appels de fonds et placements prévus</p>
-
-        {loadingEngagements ? (
-          <div className="h-32 flex items-center justify-center text-gray-500">Recherche des échéances...</div>
-        ) : errorEngagements ? (
-          <div className="p-4 bg-orange-50 border border-orange-200 rounded-md text-orange-800 font-mono text-sm">
-            ℹ️ Info : {errorEngagements}
-          </div>
-        ) : engagements.length === 0 ? (
-          <div className="h-32 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded border border-dashed border-gray-200">
-            <span className="text-2xl mb-2">📅</span>
-            <p>Aucun engagement futur enregistré pour le moment.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left border-collapse">
-              <thead className="bg-slate-50 text-slate-600 uppercase text-xs">
-                <tr>
-                  <th className="px-6 py-4 border-b border-slate-200 font-bold w-32">Date d'échéance</th>
-                  <th className="px-6 py-4 border-b border-slate-200 font-bold">Description</th>
-                  <th className="px-6 py-4 border-b border-slate-200 font-bold">Compte cible</th>
-                  <th className="px-6 py-4 border-b border-slate-200 font-bold text-right">Montant prévu</th>
+      {/* COMPTES ET ENGAGEMENTS (Conservés) */}
+      <div className="grid grid-cols-1 gap-8">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 overflow-x-auto">
+          <h2 className="text-xl font-semibold text-gray-800 mb-6">Soldes par compte bancaire</h2>
+          <table className="w-full text-sm text-left border-collapse">
+            <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
+              <tr>
+                <th className="px-6 py-4 font-bold">Compte</th>
+                <th className="px-6 py-4 font-bold text-right">Encaissé</th>
+                <th className="px-6 py-4 font-bold text-right">Décaissé</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dataComptes.map((row, i) => (
+                <tr key={i} className="border-b hover:bg-gray-50">
+                  <td className="px-6 py-4 font-medium">{row.account_name}</td>
+                  <td className="px-6 py-4 text-right text-emerald-600 font-bold">{valueFormatter(row.total_encaisse)}</td>
+                  <td className="px-6 py-4 text-right text-red-600 font-bold">{valueFormatter(row.total_decaisse_positif)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {engagements.map((eng, i) => (
-                  <tr key={i} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 border-b border-slate-100 font-medium text-slate-800">
-                      {new Date(eng.date_echeance).toLocaleDateString("fr-FR")}
-                    </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-slate-600">
-                      {eng.description}
-                    </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-slate-500 italic">
-                      {eng.compte_cible || "Non défini"}
-                    </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-right text-orange-600 font-bold whitespace-nowrap">
-                      {Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Math.abs(eng.montant))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
