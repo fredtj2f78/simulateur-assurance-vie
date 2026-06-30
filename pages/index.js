@@ -263,8 +263,8 @@ export default function Landing() {
           <span style={{ fontSize: 10, color: G.gold, background: `${G.gold}18`, border: `1px solid ${G.gold}33`, padding: '1px 6px', borderRadius: 4 }}>v29</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-         <a href="/forum" style={{ color: G.textDim, fontSize: 14, textDecoration: 'none' }}>Forum</a>
- <a href="#features" style={{ color: G.textDim, fontSize: 14, textDecoration: 'none' }}>Fonctionnalités</a>
+<a href="/guide-investisseur" style={{ color: G.textDim, fontSize: 14, textDecoration: 'none' }}>Mes analyses</a>
+<a href="#features" style={{ color: G.textDim, fontSize: 14, textDecoration: 'none' }}>Fonctionnalités</a>
           <a href="#pricing" style={{ color: G.textDim, fontSize: 14, textDecoration: 'none' }}>Tarifs</a>
           <a href="/contact" style={{ color: G.textDim, fontSize: 14, textDecoration: 'none' }}>Contact</a>
           <button onClick={() => router.push('/login')} style={{ background: 'transparent', border: `1px solid ${G.gold}44`, borderRadius: 8, color: G.gold, padding: '7px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>Connexion</button>
