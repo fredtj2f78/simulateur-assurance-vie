@@ -116,7 +116,7 @@ export default function GuideInvestisseur() {
       <main style={{ maxWidth: '880px', margin: '0 auto', padding: '0 24px 96px' }}>
         {/* Nav */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '28px 0', borderBottom: '1px solid #1C1F27' }}>
-            <a href="/" className="text-blue-600 font-bold hover:underline">← Retour à J2F Conseil</a>
+            <a href="/" className="text-blue-600 font-bold hover:underline">
 ← Retour à Audit Immo
           </a>
           <span className="ref-mono" style={{ fontSize: '11px', color: '#4A4E5A', letterSpacing: '0.1em' }}>J2F CONSEIL</span>
